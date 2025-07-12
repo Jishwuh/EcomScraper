@@ -7,6 +7,7 @@ import time
 from urllib.parse import urlparse
 import json
 import os
+import traceback
 
 RESULTS_PER_KEYWORD = 100
 SEARCH_PAUSE = 2.0
@@ -131,14 +132,16 @@ def is_ecommerce_site(url: str, proxy: str) -> bool:
       - JSONLD script with "@type": "Product" - indicates product pages when indexing
     """
     try:
-        if "http" not in proxy:
-            proxy = f"http://{proxy}"
+        if proxy:
+            if "http" not in proxy:
+                proxy = f"http://{proxy}"
         proxies = {"http": proxy, "https": proxy} if proxy else None
         resp = requests.get(url, timeout=REQUEST_TIMEOUT, headers={
             "User-Agent": "Mozilla/5.0 (compatible; EcomScraper/1.0)"
         }, proxies=proxies)
         resp.raise_for_status()
     except Exception as e:
+        print(traceback.format_exc())
         print(Fore.RED + f"Error fetching {url}: {e}")
         time.sleep(SEARCH_PAUSE)
         return False
