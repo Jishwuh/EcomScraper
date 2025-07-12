@@ -7,7 +7,9 @@ import time
 from urllib.parse import urlparse
 import json
 import os
-import traceback
+import re
+from datetime import datetime
+import random
 
 RESULTS_PER_KEYWORD = 100
 SEARCH_PAUSE = 2.0
@@ -44,6 +46,8 @@ except ImportError:
     os.system("pip install beautifulsoup4")
     print(Fore.GREEN + "Installed beautifulsoup4 successfully.")
 
+from GoogleKeywordDumper import GoogleKeywordDumper
+
 print(Fore.GREEN + Style.BRIGHT +
       r" _____                      ____                                 ")
 print(Fore.GREEN + Style.BRIGHT +
@@ -59,6 +63,13 @@ print(Fore.GREEN + Style.BRIGHT +
 print(Fore.CYAN + Style.BRIGHT + "EcomScraper - E-commerce Site Finder\n")
 print(Fore.YELLOW + "Welcome to EcomScraper! This tool finds e-commerce sites based on keywords.\n")
 
+def update_cmd_title(current_keyword: str, finished: int, total: int):
+    safe_keyword = re.sub(r'[&|><^"]', '', current_keyword[:50])
+    title = f"Checking: {safe_keyword} - {finished}/{total}"
+    try:
+        os.system(f"title {title}")
+    except Exception as e:
+        print(f"Failed to update title: {e}")
 
 def ensure_required_files():
     if not os.path.exists("blacklist.txt"):
@@ -73,6 +84,38 @@ def ensure_required_files():
         print(Fore.GREEN + "[Created] blacklist.txt")
         print(Fore.YELLOW + "→ Add one domain per line.\n")
         input(Fore.CYAN + "Press Enter to continue after editing blacklist.txt...")
+
+def generate_keywords_interactively():
+    print(Fore.MAGENTA + "\nWould you like to generate keywords using Google Autocomplete?")
+    choice = input(Fore.CYAN + "Enter Y to generate from one seed keyword, or N to use your own list: ").strip().lower()
+    
+    if choice != 'y':
+        return
+
+    seed = input(Fore.CYAN + "Enter your seed keyword (e.g., 'wireless earbuds'): ").strip()
+    while not seed:
+        seed = input(Fore.RED + "Seed keyword cannot be empty. Please enter a valid keyword: ").strip()
+
+    limit = input(Fore.CYAN + "How many keywords would you like to generate? (max 500): ").strip()
+    try:
+        limit = int(limit)
+        if limit > 500:
+            print(Fore.YELLOW + "Limiting to 500 keywords.")
+            limit = 500
+    except ValueError:
+        print(Fore.YELLOW + "Invalid number entered. Defaulting to 100 keywords.")
+        limit = 100
+
+    dumper = GoogleKeywordDumper()
+    keywords = dumper.dump_keywords(seed_keyword=seed, limit=limit)
+
+    with open("keywords.txt", "w", encoding="utf-8") as f:
+        for kw in keywords:
+            f.write(kw + "\n")
+
+    print(Fore.GREEN + f"\n✅ {len(keywords)} keywords saved to keywords.txt")
+    print(Fore.YELLOW + "You can review or edit this list before continuing.\n")
+    input(Fore.CYAN + "Press Enter to continue...")
 
     if not os.path.exists("keywords.txt"):
         with open("keywords.txt", "w", encoding="utf-8") as f:
@@ -120,11 +163,20 @@ def load_keywords(filename="keywords.txt"):
                 Fore.RED + f"[?] Keywords file '{filename}' not found. Proceeding with empty keywords.")
             return []
 
+def get_results_filename():
+    raw_input = input(Fore.CYAN + "\nWhat keyword(s) are you targeting? (used for naming result file): ").strip()
+    if not raw_input:
+        raw_input = "unnamed"
+    safe_name = re.sub(r'[\\/*?:"<>|]', "_", raw_input).strip()
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"{safe_name}_{timestamp}.txt"
+    folder = "results"
+    os.makedirs(folder, exist_ok=True)
+    return os.path.join(folder, filename)
 
-def appendToValidFile(url: str, filename: str = "valid_urls.txt") -> None:
+def appendToValidFile(url: str, filename: str) -> None:
     with open(filename, "a", encoding="utf-8") as f:
         f.write(url + "\n")
-
 
 def is_ecommerce_site(url: str, proxy: str) -> bool:
     """
@@ -140,12 +192,28 @@ def is_ecommerce_site(url: str, proxy: str) -> bool:
             "User-Agent": "Mozilla/5.0 (compatible; EcomScraper/1.0)"
         }, proxies=proxies)
         resp.raise_for_status()
-    except Exception as e:
-        print(traceback.format_exc())
-        print(Fore.RED + f"Error fetching {url}: {e}")
-        time.sleep(SEARCH_PAUSE)
+    except requests.exceptions.Timeout:
+        print(Fore.RED + f"[Timeout] Took too long to respond.")
         return False
-
+    except requests.exceptions.HTTPError as e:
+        code = e.response.status_code
+        if code == 403:
+            print(Fore.MAGENTA + f"[403 Forbidden] Access denied.")
+        elif code == 404:
+            print(Fore.RED + f"[404 Not Found] Does not exist.")
+        else:
+            print(Fore.RED + f"[HTTP {code}] Error accessing.")
+        return False
+    except requests.exceptions.ProxyError:
+        print(Fore.RED + f"[Proxy Error] Could not connect to proxy.")
+        return False
+    except requests.exceptions.ConnectionError:
+        print(Fore.RED + f"[Connection Error] Failed to connect.")
+        return False
+    except Exception as e:
+        print(Fore.RED + f"[Unknown Error] - {str(e)}")
+        return False
+    
     soup = BeautifulSoup(resp.text, "html.parser")
     text = soup.get_text(separator=" ").lower()
 
@@ -167,45 +235,97 @@ def is_ecommerce_site(url: str, proxy: str) -> bool:
 
 
 def load_or_create_config(config_file="config.json"):
+    def prompt(prompt_text, current_val, default_val, cast_type):
+        while True:
+            try:
+                inp = input(
+                    f"{prompt_text} (default: {default_val}) (Current: {current_val}): ").strip()
+                return cast_type(inp) if inp else current_val
+            except ValueError:
+                print(Fore.RED + "Invalid input. Please try again.")
+
+    config = {}
+
     if os.path.exists(config_file):
         with open(config_file, "r", encoding="utf-8") as f:
             config = json.load(f)
         print(Fore.YELLOW + f"Loaded configuration from {config_file}")
-        return config
 
-    print(Fore.CYAN + "No config file found. Please enter settings:\n")
+        change = input(Fore.CYAN + "Do you want to update your config settings? (Y/N): ").strip().lower()
+        if change != 'y':
+            return config
 
-    def prompt(prompt_text, default_val, cast_type):
-        while True:
-            try:
-                inp = input(
-                    f"{prompt_text} (default: {default_val}): ").strip()
-                return cast_type(inp) if inp else default_val
-            except ValueError:
-                print(Fore.RED + "Invalid input. Please try again.")
+    print(Fore.MAGENTA + "\nUpdating configuration settings...\n")
 
-    config = {
-        "keywords_file": input("Enter path to keywords file (default: keywords.txt): ").strip() or "keywords.txt",
-        "results_per_keyword": prompt("Number of Google results to check per keyword", 100, int),
-        "request_timeout": prompt("HTTP request timeout (seconds)", 5, int),
-        "search_pause": prompt("Pause between searches (seconds)", 2.0, float),
-        "max_keywords": prompt("Max number of keywords to process (blank = no limit)", None, lambda x: int(x) if x else None),
-        "proxy": input("Enter proxy (user:pass@host:port or ip:port, leave blank for none): ").strip() or None
-    }
+    config['keywords_file'] = input(
+        f"Enter path to keywords file (default: keywords.txt) (Current: {config.get('keywords_file', 'keywords.txt')}): ").strip() or config.get('keywords_file', 'keywords.txt')
+
+    config['results_per_keyword'] = prompt(
+        "Number of Google results to check per keyword",
+        config.get('results_per_keyword', 100),
+        100,
+        int
+    )
+
+    config['request_timeout'] = prompt(
+        "HTTP request timeout (seconds)",
+        config.get('request_timeout', 5),
+        5,
+        int
+    )
+
+    config['search_pause'] = prompt(
+        "Pause between searches (seconds)",
+        config.get('search_pause', 2.0),
+        2.0,
+        float
+    )
+
+    config['max_keywords'] = prompt(
+        "Max number of keywords to process (blank = no limit)",
+        config.get('max_keywords', None),
+        '',
+        lambda x: int(x) if x else None
+    )
+
+    config['proxy'] = input(
+        f"Enter proxy (user:pass@host:port or ip:port, leave blank for none) (Current: {config.get('proxy', 'None')}): ").strip() or config.get('proxy', None)
 
     with open(config_file, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4)
-    print(Fore.GREEN + f"\nConfiguration saved to {config_file} ✅\n")
+    print(Fore.GREEN + f"\nConfiguration updated and saved to {config_file} !\n")
+
     return config
 
+
+def safe_google_search(query, num_results, proxy=None, max_retries=5, cooldown=60):
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            return list(search(query, num_results=num_results, proxy=proxy))
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:
+                wait_time = cooldown + random.randint(10, 30)
+                print(Fore.RED + f"[429 Too Many Requests] Rate limited. Waiting {wait_time} seconds before retrying...")
+                time.sleep(wait_time)
+                attempt += 1
+            else:
+                raise
+        except Exception as e:
+            print(Fore.RED + f"[Search Error] {e}")
+            break
+    print(Fore.RED + "[Failed] Max retries reached.")
+    return []
 
 def main():
     ensure_required_files()
     blacklist = load_blacklist()
+    generate_keywords_interactively()
     keywords = load_keywords()
     print(Fore.YELLOW + f"Loaded {len(blacklist)} blacklisted domains.")
     print(Fore.YELLOW + f"Loaded {len(keywords)} keywords.")
     args = load_or_create_config()
+    output_file = get_results_filename()
 
     global RESULTS_PER_KEYWORD, REQUEST_TIMEOUT, SEARCH_PAUSE
     RESULTS_PER_KEYWORD = args['results_per_keyword']
@@ -217,31 +337,31 @@ def main():
 
     found_urls = set()
 
-    for kw in keywords:
+    for i, kw in enumerate(keywords, start=1):
+        update_cmd_title(kw, i - 1, len(keywords))
         print(Fore.BLUE + f"\nSearching for e-commerce sites related to: {kw}")
-        for url in search(kw, num_results=RESULTS_PER_KEYWORD, proxy=args['proxy']):
+        for url in safe_google_search(kw, num_results=RESULTS_PER_KEYWORD, proxy=args['proxy']):
             domain = urlparse(url).netloc.lower()
             if url in found_urls:
                 continue
             if any(black in domain for black in blacklist):
                 continue
             print(Fore.CYAN + f"{domain} ", end="", flush=True)
-            if is_ecommerce_site(url, args['proxy']):
-                print(Fore.GREEN + " [OK]")
+            result = is_ecommerce_site(url, args['proxy'])
+            if result:
+                print(Fore.GREEN + "[OK]")
                 if not str(domain).startswith("http"):
-                    domain = "https://" + \
-                        domain if url.startswith(
-                            "https") else "http://" + domain
+                    domain = "https://" + domain if url.startswith("https") else "http://" + domain
                 found_urls.add(domain)
-                appendToValidFile(domain + " | " + url)
+                appendToValidFile(domain + " | " + url, filename=output_file)
             else:
-                print(Fore.RED + " [X]")
+                print(Fore.RED + "[X]", flush=True)
 
-    with open("ecommerce_sites.txt", "w", encoding="utf-8") as out:
+    with open(output_file, "w", encoding="utf-8") as out:
         for url in sorted(found_urls):
             out.write(url + "\n")
 
-    print(f"\n✅ Done! {len(found_urls)} site(s) saved to ecommerce_sites.txt")
+    print(Fore.GREEN + f"\n✅ Done! {len(found_urls)} site(s) saved to {output_file}")
 
 
 if __name__ == "__main__":
