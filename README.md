@@ -7,13 +7,19 @@
 ## 📦 Features
 
 - Google search integration for keyword discovery  
+- Optional **Google Autocomplete keyword generator** (via seed + limit)
 - Automatic detection of e-commerce sites  
+- Smart retry system on Google 429 errors (with cooldown + retry limit)  
+- Live-updating **Command Prompt title** with progress tracking  
+- Interactive config editor showing current values before changing  
 - Custom blacklist to avoid known domains  
 - Input-based configuration saved to `config.json`  
 - Auto-generation of required files (`keywords.txt`, `blacklist.txt`)  
 - Optional proxy support  
-- Output of valid e-commerce domains in `valid_urls.txt` and `ecommerce_sites.txt`  
+- Output results saved to **timestamped files** in the `/results` folder  
 - Color-coded and clean terminal output  
+- Kill switch if keyword expansion returns too few new suggestions  
+- Live feedback on keyword generation progress using `colorama`  
 
 ---
 
@@ -23,7 +29,7 @@ Install dependencies using:
 
 ```bash
 pip install -r requirements.txt
-```
+````
 
 Or let the script auto-install what's missing when run.
 
@@ -51,19 +57,16 @@ python EcomScraper.py
 ```
 
 On the first run, it will:
-- Create a `keywords.txt` file with sample keywords
-- Create a `blacklist.txt` with default domains to exclude
-- Prompt you for configuration (saved in `config.json`)
 
-### 3. Fill Out `keywords.txt`
+* Ask if you'd like to generate keywords from Google autocomplete
+* Create a `keywords.txt` file with sample keywords
+* Create a `blacklist.txt` with default domains to exclude
+* Prompt you for configuration (saved in `config.json`)
 
-Open the file and input one keyword or product phrase per line:
+### 3. Choose Your Keywords
 
-```
-wireless earbuds
-gaming laptop
-ergonomic chair
-```
+* You can **manually enter keywords** in `keywords.txt`, or
+* **Automatically generate them** by entering a seed keyword (e.g., "gaming mouse") and a limit (up to 500). The tool will fetch autocomplete suggestions and write them to `keywords.txt`.
 
 Lines starting with `#` are treated as comments.
 
@@ -76,69 +79,72 @@ amazon.com
 ebay.com
 ```
 
-### 5. Configure the Tool (First Run)
+### 5. Configure the Tool (First Run or On Demand)
 
-You'll be prompted to input:
-- Path to keyword file
-- Number of Google results per keyword
-- HTTP request timeout
-- Delay between searches
-- Max number of keywords to use
-- Proxy (optional, format: `http://user:pass@host:port`)
+You’ll be prompted to input:
 
-All values are saved in `config.json` and reused in future runs.
+* Path to keyword file
+* Number of Google results per keyword
+* HTTP request timeout
+* Delay between searches
+* Max number of keywords to use
+* Proxy (optional)
+
+If `config.json` already exists, you'll be asked if you want to update it.
+Current values will be shown for reference.
 
 ---
 
 ## 📄 Output Files
 
-- `valid_urls.txt` – raw list of valid e-commerce site matches with source URL  
-- `ecommerce_sites.txt` – clean deduplicated list of valid e-commerce domains  
+* Results are saved in `/results` as:
 
----
-
-## 🖥 Terminal Compatibility
-
-For best results, use:
-- ✅ Windows Terminal or VSCode terminal (for proper symbol/emoji rendering)
-- ✅ UTF-8 compatible font like Cascadia Code or Segoe UI Emoji
-
-If emojis like `✓` or `✗` appear as `?`, switch terminals or use ASCII mode instead.
+  ```
+  <keyword>_YYYY-MM-DD_HH-MM-SS.txt
+  ```
+* Each file contains deduplicated, valid e-commerce domains with their source URLs
 
 ---
 
 ## 🔐 Proxy Support
 
 To avoid Google rate limits, you can use a proxy:
-- Format: `user:pass@host:port` or `ip:port`
-- Leave blank to skip
+
+* Format: `user:pass@host:port` or `ip:port`
+* Leave blank to skip
+
+The tool also implements retry logic for Google’s 429 errors (Too Many Requests) with a cooldown and retry limit.
 
 ---
 
 ## ✅ Example Run
 
 ```
-Enter number of Google results to check per keyword (default: 100): 50
-Enter HTTP request timeout in seconds (default: 5): 3
-Enter proxy (leave blank for none): 127.0.0.1:8080
+Would you like to generate keywords using Google Autocomplete? (Y/N): Y
+Enter your seed keyword: wireless earbuds
+How many keywords would you like to generate? (max 500): 100
+✅ 100 keywords saved to keywords.txt
 
-Loaded 65 blacklisted domains.
+Do you want to update your config settings? (Y/N): N
+
 Loaded 3 keywords.
+Loaded 65 blacklisted domains.
 
 Searching for e-commerce sites related to: wireless earbuds
-→ https://somebrand.com [OK]
-→ https://amazon.com [X] (blacklisted)
+→ www.brandx.com [OK]
+→ www.amazon.com [X] (blacklisted)
 
-✅ Done! 1 site(s) saved to ecommerce_sites.txt
+✅ Done! 1 site(s) saved to results/wireless_earbuds_2025-07-11_22-16-02.txt
 ```
 
 ---
 
 ## 🧠 Tips
 
-- Use long-tail keywords for better targeting (e.g., `best outdoor camping gear`)
-- Update blacklist regularly to avoid spammy results
-- Rotate proxies or search pauses to avoid blocking
+* Use long-tail keywords for better targeting (e.g., `best budget gaming monitor 2025`)
+* Rotate proxies or increase search pauses to avoid Google blocks
+* Update your blacklist regularly to clean up results
+* Use the Google Autocomplete feature to get long-tail, real-world queries
 
 ---
 
